@@ -42,8 +42,6 @@ namespace usb_cam
 UsbCamNode::UsbCamNode(const rclcpp::NodeOptions & node_options)
 : Node("usb_cam", node_options),
   img_(new sensor_msgs::msg::Image()),
-  image_pub_(std::make_shared<image_transport::CameraPublisher>(
-      image_transport::create_camera_publisher(this, "image_raw", rclcpp::QoS{100}.get_rmw_qos_profile()))),
   service_capture_(
     this->create_service<std_srvs::srv::SetBool>(
       "set_capture",
@@ -64,8 +62,19 @@ UsbCamNode::UsbCamNode(const rclcpp::NodeOptions & node_options)
   this->declare_parameter("io_method", "mmap");
   this->declare_parameter("pixel_format", "yuyv");
   this->declare_parameter("video_device", "/dev/video0");
+  this->declare_parameter("best_effort", false);
 
   get_params();
+  auto qos = rclcpp::QoS{2};
+
+  if(best_effort_)
+  {
+    qos = qos.best_effort();
+  }
+
+  image_pub_ = std::make_shared<image_transport::CameraPublisher>(
+      image_transport::create_camera_publisher(this, "image_raw", qos.get_rmw_qos_profile()));
+
   init();
   parameters_callback_handle_ = add_on_set_parameters_callback(
     std::bind(
@@ -155,7 +164,7 @@ void UsbCamNode::get_params()
   auto parameters_client = std::make_shared<rclcpp::SyncParametersClient>(this);
   auto parameters = parameters_client->get_parameters(
     {"camera_name", "camera_info_url", "frame_id", "framerate",
-      "image_height", "image_width", "io_method", "pixel_format", "video_device"});
+      "image_height", "image_width", "io_method", "pixel_format", "video_device", "best_effort"});
   assign_params(parameters);
 }
 
@@ -182,6 +191,8 @@ void UsbCamNode::assign_params(const std::vector<rclcpp::Parameter> & parameters
       pixel_format_name_ = parameter.value_to_string();
     } else if (parameter.get_name() == "video_device") {
       video_device_name_ = parameter.value_to_string();
+    } else if (parameter.get_name() == "best_effort") {
+      best_effort_ = parameter.as_bool();
     } else {
       RCLCPP_WARN(this->get_logger(), "Invalid parameter name: %s", parameter.get_name().c_str());
     }

@@ -92,6 +92,7 @@ public:
   int image_width_;
   int image_height_;
   int framerate_;
+  bool best_effort_ = false;
 
   // TODO(lucasw) use v4l2ucp for these?
   // int exposure_, brightness_, contrast_, saturation_, sharpness_, focus_,
