@@ -290,17 +290,21 @@ void UsbCamNode::set_v4l2_params()
     m_camera->set_v4l_parameter("white_balance_temperature", m_parameters.white_balance);
   }
 
+  bool set_v4l_parameter_failed = true;
   // check auto exposure
   if (!m_parameters.autoexposure) {
     RCLCPP_INFO(this->get_logger(), "Setting 'exposure_auto' to %d", 1);
     RCLCPP_INFO(this->get_logger(), "Setting 'exposure' to %d", m_parameters.exposure);
     // turn down exposure control (from max of 3)
-    m_camera->set_v4l_parameter("exposure_auto", 1);
+    if(m_camera->set_v4l_parameter("exposure_auto", 1) == set_v4l_parameter_failed)
+      m_camera->set_v4l_parameter("auto_exposure", 1);
     // change the exposure level
-    m_camera->set_v4l_parameter("exposure_absolute", m_parameters.exposure);
+    if(m_camera->set_v4l_parameter("exposure_absolute", m_parameters.exposure) == set_v4l_parameter_failed)
+      m_camera->set_v4l_parameter("exposure_time_absolute", m_parameters.exposure);
   } else {
     RCLCPP_INFO(this->get_logger(), "Setting 'exposure_auto' to %d", 3);
-    m_camera->set_v4l_parameter("exposure_auto", 3);
+    if(m_camera->set_v4l_parameter("exposure_auto", 3) == set_v4l_parameter_failed)
+      m_camera->set_v4l_parameter("auto_exposure", 3);
   }
 
   // check auto focus
