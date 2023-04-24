@@ -94,6 +94,9 @@ typedef struct
   bool autoexposure;
   bool autofocus;
   bool best_effort;
+  bool do_scale;
+  int scale_height;
+  int scale_width;
 } parameters_t;
 
 typedef struct

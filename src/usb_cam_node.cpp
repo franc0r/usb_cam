@@ -27,6 +27,7 @@
 // POSSIBILITY OF SUCH DAMAGE.
 
 #include <memory>
+#include <opencv2/imgproc.hpp>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -76,6 +77,9 @@ UsbCamNode::UsbCamNode(const rclcpp::NodeOptions & node_options)
   this->declare_parameter("exposure", 100);
   this->declare_parameter("autofocus", false);
   this->declare_parameter("focus", -1);  // 0-255, -1 "leave alone"
+  this->declare_parameter("do_scale", false);
+  this->declare_parameter("scale_height", 480);
+  this->declare_parameter("scale_width", 640);
 
   get_params();
   auto qos = rclcpp::QoS{2};
@@ -190,7 +194,7 @@ void UsbCamNode::get_params()
       "camera_name", "camera_info_url", "frame_id", "framerate", "image_height", "image_width",
       "io_method", "pixel_format", "video_device", "best_effort", "brightness", "contrast",
       "saturation", "sharpness", "gain", "auto_white_balance", "white_balance", "autoexposure",
-      "exposure", "autofocus", "focus"
+      "exposure", "autofocus", "focus", "do_scale", "scale_height", "scale_width"
     }
   );
 
@@ -244,6 +248,12 @@ void UsbCamNode::assign_params(const std::vector<rclcpp::Parameter> & parameters
       m_parameters.autofocus = parameter.as_bool();
     } else if (parameter.get_name() == "focus") {
       m_parameters.focus = parameter.as_int();
+    } else if (parameter.get_name() == "do_scale") {
+      m_parameters.do_scale = parameter.as_bool();
+    } else if (parameter.get_name() == "scale_height") {
+      m_parameters.scale_height = parameter.as_int();
+    } else if (parameter.get_name() == "scale_width") {
+      m_parameters.scale_width = parameter.as_int();
     } else {
       RCLCPP_WARN(this->get_logger(), "Invalid parameter name: %s", parameter.get_name().c_str());
     }
@@ -325,21 +335,57 @@ void UsbCamNode::set_v4l2_params()
 bool UsbCamNode::take_and_send_image()
 {
   // Only resize if required
-  if (m_image_msg->data.size() != m_camera->get_image_size()) {
-    m_image_msg->width = m_camera->get_image_width();
-    m_image_msg->height = m_camera->get_image_height();
-    m_image_msg->encoding = m_camera->get_pixel_format()->ros();
-    m_image_msg->step = m_camera->get_image_step();
-    if (m_image_msg->step == 0) {
-      // Some formats don't have a linesize specified by v4l2
-      // Fall back to manually calculating it step = size / height
-      m_image_msg->step = m_camera->get_image_size() / m_image_msg->height;
-    }
-    m_image_msg->data.resize(m_camera->get_image_size());
-  }
+  if(m_parameters.do_scale)
+  {
+    int width = m_parameters.scale_width;
+    int height = m_parameters.scale_height;
+    auto pixel_format = m_camera->get_pixel_format();
 
-  // grab the image, pass image msg buffer to fill
-  m_camera->get_image(reinterpret_cast<char *>(&m_image_msg->data[0]));
+    if(pixel_format->channels() != 3 && pixel_format->bit_depth() != 8)
+    {
+      //todo: support other pixel format by using suitable opencv mat type
+      throw std::runtime_error("Only 8-bit RGB images are supported for scaling");
+    }
+
+    size_t scale_image_size_in_bytes = width * height * pixel_format->channels();
+
+    if (m_image_msg->data.size() != scale_image_size_in_bytes) {
+      m_image_msg->width = width;
+      m_image_msg->height = height;
+      m_image_msg->encoding = pixel_format->ros();
+      m_image_msg->step = width * pixel_format->channels();
+      if (m_image_msg->step == 0) {
+        // Some formats don't have a linesize specified by v4l2
+        // Fall back to manually calculating it step = size / height
+        m_image_msg->step = scale_image_size_in_bytes / height;
+      }
+      m_image_msg->data.resize(scale_image_size_in_bytes);
+    }
+
+    // grab the image, pass image msg buffer to fill
+    auto image = m_camera->get_image();
+    cv::Mat cvImage = cv::Mat(m_camera->get_image_height(), m_camera->get_image_width(), CV_8UC3, image);
+    cv::Mat cvImageRezised = cv::Mat(height, width, CV_8UC3, m_image_msg->data.data());
+    cv::resize(cvImage, cvImageRezised, cv::Size(width, height), 0, 0, cv::INTER_LINEAR);
+  }
+  else
+  {
+    if (m_image_msg->data.size() != m_camera->get_image_size()) {
+      m_image_msg->width = m_camera->get_image_width();
+      m_image_msg->height = m_camera->get_image_height();
+      m_image_msg->encoding = m_camera->get_pixel_format()->ros();
+      m_image_msg->step = m_camera->get_image_step();
+      if (m_image_msg->step == 0) {
+        // Some formats don't have a linesize specified by v4l2
+        // Fall back to manually calculating it step = size / height
+        m_image_msg->step = m_camera->get_image_size() / m_image_msg->height;
+      }
+      m_image_msg->data.resize(m_camera->get_image_size());
+    }
+
+    // grab the image, pass image msg buffer to fill
+    m_camera->get_image(reinterpret_cast<char *>(&m_image_msg->data[0]));
+  }
 
   auto stamp = m_camera->get_image_timestamp();
   m_image_msg->header.stamp.sec = stamp.tv_sec;
