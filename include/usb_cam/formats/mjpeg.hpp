@@ -178,7 +178,7 @@ public:
     // deprecated: https://github.com/FFmpeg/FFmpeg/commit/f7db77bd8785d1715d3e7ed7e69bd1cc991f2d07
     av_init_packet(m_avpacket);
     #else
-    av_new_packet(m_avpacket, bytes_used);
+    //av_new_packet(m_avpacket, bytes_used);
     #endif
 
     av_packet_from_data(
